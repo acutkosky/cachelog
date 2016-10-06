@@ -7,6 +7,7 @@ import inspect
 
 _cacheRoot = '.'
 _scope = ''
+indexName = 'cacheIndex'
 
 def slugify(value):
     """
@@ -26,6 +27,9 @@ def setCacheRoot(cacheRoot):
     '''sets the path used to store cached results'''
     _cacheRoot = cacheRoot
 
+def touchPath(scope, cacheRoot):
+    os.makedirs(os.path.join(cacheRoot,scope))
+
 def setDefaultScope(scope):
     _scope = scope
 
@@ -37,11 +41,12 @@ def getTimestamp():
 
 def getCacheFileName(function, arguments, timestamp):
     return getCacheKey(function, arguments) \
-        + '::' + str(timestamp)
+        + '::' + str(timestamp)+'.cache'
 
 def loadIndex(scope, cacheRoot):
+    touchPath(scope, cacheRoot)
     try:
-        indexFile = open(os.path.join(cacheRoot+scope,'cacheIndex'))
+        indexFile = open(os.path.join(cacheRoot+scope,indexName))
         index = pickle.load(indexFile)
         indexFile.close()
     except IOError:
@@ -50,7 +55,7 @@ def loadIndex(scope, cacheRoot):
     return index
 
 def writeIndex(index, scope, cacheRoot):
-    indexFile = open(os.path.join(cacheRoot+scope, 'cacheIndex'), 'w')
+    indexFile = open(os.path.join(cacheRoot+scope, indexName), 'w')
     pickle.dump(index, indexFile)
     indexFile.close()
 
