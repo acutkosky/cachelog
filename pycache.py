@@ -5,7 +5,7 @@ import re
 import time
 import inspect
 
-_cacheRoot = '.'
+_cacheRoot = './.pycache'
 _scope = ''
 indexName = 'cacheIndex'
 
@@ -65,19 +65,22 @@ def checkCache(function, arguments, scope= _scope, cacheRoot= _cacheRoot):
   cacheKey = getCacheKey(function, arguments)
 
   if cacheKey not in index:
-    return {'cacheFile': None}
+    return {'cacheFile': None, 'logFiles': []}
 
   return index[cacheKey]
 
 def getCacheFile(function, arguments, scope, cacheRoot):
   return checkCache(function, arguments, scope, cacheRoot)['cacheFile']
 
+def getLogFiles(function, arguments, filterFunc, scope, cacheRoot):
+  return filter(checkCache(function, arguments, scope, cacheRoot)['logFiles'], filterFunc)
+
 def blankIndexEntry():
   return {'cacheFile': None, 'cacheTime': 0, 'logFiles': []}
 
-def addToIndex(cacheKey, timestamp, index, cacheFile, setCache):
+def addToIndex(cacheKey, metaData, timestamp, index, cacheFile, setCache):
   '''
-  adds an entry corresponding to cacheKey with timestamp to an index
+  adds an entry corresponding to cacheKey with timestamp and metaData to an index
   dictionary.
   setCache is a true/false flag indicated whether the new entry is only a
   write-only log or can be accessed as a cache-hit on a lookup.
@@ -86,22 +89,29 @@ def addToIndex(cacheKey, timestamp, index, cacheFile, setCache):
   if cacheKey not in index:
     index[cacheKey] = blankIndexEntry()
 
-  index[cacheKey]['logFiles'].append({'fileName': cacheFile, 'time': timestamp})
+  index[cacheKey]['logFiles'].append({'fileName': cacheFile, 'time': timestamp, 'metaData': metaData})
   if setCache and index[cacheKey]['cacheTime'] < timestamp:
     index[cacheKey]['cacheFile'] = cacheFile
     index[cacheKey]['cacheTime'] = timestamp
 
-def writeEntryToIndex(function, arguments, timestamp, cacheFile, setCache, \
+def writeEntryToIndex(function, arguments, metaData, timestamp, cacheFile, setCache, \
     scope, cacheRoot):
   index = loadIndex(scope, cacheRoot)
   cacheKey = getCacheKey(function, arguments)
-  addToIndex(cacheKey, timestamp, index, cacheFile, setCache)
+  addToIndex(cacheKey, metaData, timestamp, index, cacheFile, setCache)
   writeIndex(index, scope, cacheRoot)
 
 def rebuildIndex(scope, cacheRoot):
   '''
   scans files in a directory to recover the index in case the index is
   corrupted.
+
+  the index is a dictionary whose keys are 'cacheKeys' (filenames)
+  The value for a cacheKey is in turn a dictionary containing the key
+  'logFiles' whose value is a list of files listed under this cache key,
+  'cacheFile' is the file to return on a cache hit
+  'timestampt' is the time of cacheFile was created. 
+  See 'addToIndex' function for a codified description of this.
   '''
   path = os.path.join(cacheRoot,scope)
   fileNames = [f for f in os.listdir(path) if \
@@ -148,13 +158,16 @@ def cache(function, arguments, scope = _scope, cacheRoot = _cacheRoot):
 
   return log(function, arguments, True, scope, cacheRoot)
 
-def log(function, arguments, cache = True, scope = _scope, cacheRoot= _cacheRoot):
+def log(function, arguments, metaData=None, cache = True, scope = _scope, cacheRoot= _cacheRoot):
   '''
   runs the function on the arguments and stores the restult in a logfile.
   These results can be recalled as a cached result of the function later if
   cache = True.
   Notice that this ALWAYS runs the function, regardless of whether it has been
   cached already.
+
+  metaData is an object that is stored in the metaData section of the cache index. It should
+  be a small object used for filtering log files.
   '''
 
   cacheKey = getCacheKey(function, arguments)
@@ -170,7 +183,7 @@ def log(function, arguments, cache = True, scope = _scope, cacheRoot= _cacheRoot
   cacheFile = getCacheFileName(function, arguments, timestamp)
 
   writeDataToCacheFile(cacheData, cacheFile, scope, cacheRoot)
-  writeEntryToIndex(function, arguments, timestamp, cacheFile, True, scope, \
+  writeEntryToIndex(function, arguments, metaData, timestamp, cacheFile, True, scope, \
       cacheRoot)
   return cacheData['results']
 
@@ -198,12 +211,7 @@ def getSaveFunc(data):
 def save(data, title, force = False, scope = _scope, cacheRoot = _cacheRoot):
   saveFunc = getSaveFunc(data)
   arguments = {'title': title}
-
-  cacheFile = getCacheFile(saveFunc, arguments, scope, cacheRoot)
-  if (not force and cacheFile != None):
-    raise ValueError('data under the name "%s" has already been saved! Set force=True to override' % (title))
-  
-  cache(saveFunc, {'title': title})
+  log(saveFunc, {'title': title})
 
 
 def get(data, title, scope = _scope, cacheRoot = _cacheRoot):
@@ -214,4 +222,4 @@ def get(data, title, scope = _scope, cacheRoot = _cacheRoot):
   if (cacheFile == None):
     return None
 
-  return cache(saveFunc, {'title': title})['data']
+  return getResultsFromCacheFile(saveFunc, {'title': title})['data']
