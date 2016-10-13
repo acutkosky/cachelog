@@ -179,6 +179,7 @@ def log(function, arguments, metaData=None, cache = True, scope = _scope, cacheR
   cacheData['results'] = function(**arguments)
   timestamp = getTimestamp()
   cacheData['timestamp'] = timestamp
+  cacheData['metaData'] = metaData
 
   cacheFile = getCacheFileName(function, arguments, timestamp)
 
@@ -208,10 +209,10 @@ def getSaveFunc(data):
     return {'data': data, 'title': title}
   return saveData
 
-def save(data, title, scope = _scope, cacheRoot = _cacheRoot):
+def save(data, title, metaData=None, scope = _scope, cacheRoot = _cacheRoot):
   saveFunc = getSaveFunc(data)
   arguments = {'title': title}
-  log(saveFunc, {'title': title})
+  log(saveFunc, {'title': title}, metaData)
 
 
 def get(data, title, filterFunc = lambda x: True, scope = _scope, cacheRoot = _cacheRoot):
@@ -220,4 +221,4 @@ def get(data, title, filterFunc = lambda x: True, scope = _scope, cacheRoot = _c
 
   logFiles = getLogFiles(saveFunc, arguments, filterFunc, scope, cacheRoot)
 
-  return [getResultsFromCacheFile(logFile['fileName']) for logFile in logFiles]
+  return [{'savedData': getResultsFromCacheFile(logFile['fileName']), 'metaData': logFile['metaData']} for logFile in logFiles]
