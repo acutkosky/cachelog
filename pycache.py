@@ -76,7 +76,7 @@ def getCacheFile(function, arguments, scope, cacheRoot):
   return checkCache(function, arguments, scope, cacheRoot)['cacheFile']
 
 def getLogFiles(function, arguments, filterFunc, scope, cacheRoot):
-  return filter(checkCache(function, arguments, scope, cacheRoot)['logFiles'], filterFunc)
+  return filterFunc(checkCache(function, arguments, scope, cacheRoot)['logFiles'])
 
 def blankIndexEntry():
   return {'cacheFile': None, 'cacheTime': 0, 'logFiles': []}
@@ -220,8 +220,8 @@ def save(data, title, metaData=None, scope = _scope, cacheRoot = _cacheRoot):
   log(saveFunc, {'title': title}, metaData)
 
 
-def get(data, title, filterFunc = lambda x: True, scope = _scope, cacheRoot = _cacheRoot):
-  saveFunc = getSaveFunc(data)
+def get(title, filterFunc = lambda x: x, scope = _scope, cacheRoot = _cacheRoot):
+  saveFunc = getSaveFunc(None)
   arguments = {'title': title}
 
   logFiles = getLogFiles(saveFunc, arguments, filterFunc, scope, cacheRoot)
