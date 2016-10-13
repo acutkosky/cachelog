@@ -5,7 +5,7 @@ import re
 import time
 import inspect
 
-_cacheRoot = './.pycache'
+_cacheRoot = '.pycache'
 _scope = ''
 indexName = 'cacheIndex'
 
@@ -28,7 +28,10 @@ def setCacheRoot(cacheRoot):
   _cacheRoot = cacheRoot
 
 def touchPath(scope, cacheRoot):
-  os.makedirs(os.path.join(cacheRoot,scope))
+  try:
+    os.makedirs(os.path.join(cacheRoot,scope))
+  except OSError:
+    pass
 
 def setDefaultScope(scope):
   _scope = scope
@@ -169,6 +172,8 @@ def log(function, arguments, metaData=None, cache = True, scope = _scope, cacheR
   metaData is an object that is stored in the metaData section of the cache index. It should
   be a small object used for filtering log files.
   '''
+
+  touchPath(scope, cacheRoot)
 
   cacheKey = getCacheKey(function, arguments)
   cacheData = {}
