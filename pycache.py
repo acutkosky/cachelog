@@ -226,4 +226,4 @@ def get(title, filterFunc = lambda x: x, scope = _scope, cacheRoot = _cacheRoot)
 
   logFiles = getLogFiles(saveFunc, arguments, filterFunc, scope, cacheRoot)
 
-  return [{'savedData': getResultsFromCacheFile(logFile['fileName']), 'metaData': logFile['metaData']} for logFile in logFiles]
+  return [{'savedData': getResultsFromCacheFile(logFile['fileName'], scope, cacheRoot), 'metaData': logFile['metaData']} for logFile in logFiles]
