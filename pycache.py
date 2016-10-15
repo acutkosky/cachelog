@@ -9,6 +9,8 @@ _cacheRoot = '.pycache'
 _scope = ''
 indexName = 'cacheIndex'
 
+VERSION = 0.1
+
 def slugify(value):
   """
   Normalizes string, converts to lowercase, removes non-alpha
@@ -185,6 +187,7 @@ def log(function, arguments, metaData=None, cache = True, scope = _scope, cacheR
   timestamp = getTimestamp()
   cacheData['timestamp'] = timestamp
   cacheData['metaData'] = metaData
+  cacheData['pycacheversion'] = VERSION
 
   cacheFile = getCacheFileName(function, arguments, timestamp)
 
@@ -218,7 +221,6 @@ def save(data, title, metaData=None, scope = _scope, cacheRoot = _cacheRoot):
   saveFunc = getSaveFunc(data)
   arguments = {'title': title}
   log(saveFunc, {'title': title}, metaData)
-
 
 def get(title, filterFunc = lambda x: x, scope = _scope, cacheRoot = _cacheRoot):
   saveFunc = getSaveFunc(None)
