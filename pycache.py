@@ -127,6 +127,7 @@ def rebuildIndex(scope, cacheRoot):
     try:
       fp = open(f)
       cacheData = pickle.load(fp)
+      fp.close()
       cacheKey = cacheData['cacheKey']
       isCacheHit = cacheData['isCacheHit']
       timestamp = cacheData['timestamp']
