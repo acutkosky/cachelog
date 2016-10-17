@@ -60,12 +60,17 @@ def getLockFileName(scope, cacheRoot):
 def getIndexLockHolder(scope, cacheRoot):
   path = os.path.join(cacheRoot,scope,_lockDir)
   fileNames = [f for f in os.listdir(path) if os.path.isfile(os.path.join(path,f)) and f.find(lockIndexPrefix)==0]
-  def getTimeIdPair(fileName):
-    fp = open(os.path.join(path,fileName))
-    timeIdPair = pickle.load(fp)
-    fp.close()
-    return timeIdPair
-  timeIdPairs = [getTimeIdPair(fileName) for fileName in fileNames]
+  def getTimeIdPairs(fileNames):
+    for fileName in fileNames:
+      fp = open(os.path.join(path,fileName))
+      try:
+        timeIdPair = pickle.load(fp)
+      except (EOFError, ValueError):
+        timeIdPair = None
+      fp.close()
+      if timeIdPair != None:
+        yield timeIdPair
+  timeIdPairs = [pair for pair in getTimeIdPairs(fileNames)]
 
   if len(timeIdPairs) == 0:
     return -1
@@ -91,7 +96,7 @@ def lockIndex(scope, cacheRoot):
   lockFileName = getLockFileName(scope, cacheRoot)
   lockFile = open(lockFileName, 'w')
   timestamp = getTimestamp()
-  pickle.dump(lockFile, {'timestamp': timestamp, 'ID': ID} )
+  pickle.dump({'timestamp': timestamp, 'ID': ID}, lockFile)
   lockFile.close()
 
   while(not indexLockedByUs(scope, cacheRoot)):
