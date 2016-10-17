@@ -4,6 +4,7 @@ import unicodedata
 import re
 import time
 import inspect
+import random
 
 _cacheRoot = '.pycache'
 _scope = ''
