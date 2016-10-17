@@ -7,9 +7,14 @@ import inspect
 
 _cacheRoot = '.pycache'
 _scope = ''
+_lockDir = '.locks'
 indexName = 'cacheIndex'
 
+lockIndexPrefix = 'lockIndex'
+
 VERSION = 0.1
+
+ID = int(random.random()*10000000000000000)
 
 def slugify(value):
   """
@@ -31,7 +36,7 @@ def setCacheRoot(cacheRoot):
 
 def touchPath(scope, cacheRoot):
   try:
-    os.makedirs(os.path.join(cacheRoot,scope))
+    os.makedirs(os.path.join(cacheRoot,scope,_lockDir))
   except OSError:
     pass
 
@@ -48,10 +53,54 @@ def getCacheFileName(function, arguments, timestamp):
   return getCacheKey(function, arguments) \
     + '::' + str(timestamp)+'.cache'
 
+def getLockFileName(scope, cacheRoot):
+  return os.path.join(cacheRoot,scope,_lockDir,lockIndexPrefix+':'+ID)
+
+def getIndexLockHolder(scope, cacheRoot):
+  path = os.path.join(cacheRoot,scope,_lockDir)
+  fileNames = [f for f in os.listdir(path) if os.path.isfile(os.path.join(path,f)) and f.find(lockIndexPrefix)==0]
+  def getTimeIdPair(fileName):
+    fp = open(os.path.join(path,fileName))
+    timeIdPair = pickle.load(fp)
+    fp.close()
+    return timeIdPair
+  timeIdPairs = [getTimeIdPair(fileName) for fileName in fileNames]
+
+  if len(timeIdPairs) == 0:
+    return -1
+
+  minTimeStamp = min([x['timestamp'] for x in timeIdPairs])
+  lockHolder = min([x['ID'] for x in timeIdPairs if x['timestamp'] == minTimeStamp])
+
+  return lockHolder
+
+def indexLockedByUs(scope, cacheRoot):
+  return getIndexLockHolder(scope, cacheRoot) == ID
+
+def unlockIndex(scope, cacheRoot):
+  try:
+    lockFileName = getLockFileName(scope, cacheRoot)
+    os.remove(lockFileName)
+  except OSError:
+    pass
+
+def lockIndex(scope, cacheRoot):
+  #BUSY WAIT FOR NOW - IN FUTURE THIS SHOULD PROBABLY BECOME ASYNC
+
+  lockFileName = getLockFileName(scope, cacheRoot)
+  lockFile = open(lockFileName, 'w')
+  timestamp = getTimestamp()
+  pickle.dump(lockFile, {'timestamp': timestamp, 'ID': ID} )
+  lockFile.close()
+
+  while(not indexLockedByUs(scope, cacheRoot)):
+    pass
+
 def loadIndex(scope, cacheRoot):
   touchPath(scope, cacheRoot)
+  assert(indexLockedByUs(scope,cacheRoot))
   try:
-    indexFile = open(os.path.join(cacheRoot+scope,indexName))
+    indexFile = open(os.path.join(cacheRoot,scope,indexName))
     index = pickle.load(indexFile)
     indexFile.close()
   except IOError:
@@ -60,6 +109,7 @@ def loadIndex(scope, cacheRoot):
   return index
 
 def writeIndex(index, scope, cacheRoot):
+  assert(indexLockedByUs(scope,cacheRoot))
   indexFile = open(os.path.join(cacheRoot+scope, indexName), 'w')
   pickle.dump(index, indexFile)
   indexFile.close()
@@ -75,7 +125,10 @@ def checkCache(function, arguments, scope= _scope, cacheRoot= _cacheRoot):
   return index[cacheKey]
 
 def getCacheFile(function, arguments, scope, cacheRoot):
-  return checkCache(function, arguments, scope, cacheRoot)['cacheFile']
+  lockIndex(scope, cacheRoot)
+  cacheFile = checkCache(function, arguments, scope, cacheRoot)['cacheFile']
+  unlockIndex(scope, cacheRoot)
+  return cacheFile
 
 def getLogFiles(function, arguments, filterFunc, scope, cacheRoot):
   return filterFunc(checkCache(function, arguments, scope, cacheRoot)['logFiles'])
@@ -101,10 +154,12 @@ def addToIndex(cacheKey, metaData, timestamp, index, cacheFile, setCache):
 
 def writeEntryToIndex(function, arguments, metaData, timestamp, cacheFile, setCache, \
     scope, cacheRoot):
+  lockIndex(scope, cacheRoot)
   index = loadIndex(scope, cacheRoot)
   cacheKey = getCacheKey(function, arguments)
   addToIndex(cacheKey, metaData, timestamp, index, cacheFile, setCache)
   writeIndex(index, scope, cacheRoot)
+  unlockIndex(scope, cacheRoot)
 
 def rebuildIndex(scope, cacheRoot):
   '''
@@ -125,7 +180,7 @@ def rebuildIndex(scope, cacheRoot):
   index = {}
   for f in fileNames:
     try:
-      fp = open(f)
+      fp = open(os.path.join(path,f))
       cacheData = pickle.load(fp)
       fp.close()
       cacheKey = cacheData['cacheKey']
