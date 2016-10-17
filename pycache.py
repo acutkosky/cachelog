@@ -55,7 +55,7 @@ def getCacheFileName(function, arguments, timestamp):
     + '::' + str(timestamp)+'.cache'
 
 def getLockFileName(scope, cacheRoot):
-  return os.path.join(cacheRoot,scope,_lockDir,lockIndexPrefix+':'+ID)
+  return os.path.join(cacheRoot,scope,_lockDir,lockIndexPrefix+':'+str(ID))
 
 def getIndexLockHolder(scope, cacheRoot):
   path = os.path.join(cacheRoot,scope,_lockDir)
