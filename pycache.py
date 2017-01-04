@@ -7,10 +7,9 @@ import unicodedata
 import re
 import time
 import inspect
-import random
 
-CACHE_ROOT = '.pycache'
-SCOPE = ''
+DEFAULT_CACHE_ROOT = './.pycache'
+DEFAULT_SCOPE = ''
 LOCK_DIR = '.locks'
 INDEX_NAME = 'cacheIndex'
 
@@ -18,7 +17,7 @@ LOCK_INDEX_PREFIX = 'lock_index'
 
 VERSION = 0.1
 
-ID = int(random.random()*10000000000000000)
+ID = os.getpid()
 
 def slugify(value):
     """
@@ -36,7 +35,8 @@ def slugify(value):
 
 def set_cache_root(cache_root):
     '''sets the path used to store cached results'''
-    CACHE_ROOT = cache_root
+    global DEFAULT_CACHE_ROOT
+    DEFAULT_CACHE_ROOT = cache_root
 
 def touch_path(scope, cache_root):
     '''creates directories for given scope'''
@@ -47,11 +47,25 @@ def touch_path(scope, cache_root):
 
 def set_default_scope(scope):
     '''sets default scope variable'''
-    SCOPE = scope
+    global DEFAULT_SCOPE
+    DEFAULT_SCOPE = scope
+
+def get_func_name(function):
+    '''if the argument is a function object, returns its name.
+    otherwise assumes it is a string corresponding to the name
+    of a function.'''
+
+    if hasattr(function,'__name__'):
+        return function.__name__
+    else:
+        return function   
 
 def get_cache_key(function, arguments):
     '''converts a function and arguments into a key used to store its output'''
-    return slugify(function.__name__ +'::'+str(arguments))
+
+    func_name = get_func_name(function)
+
+    return slugify(func_name + '::' + str(arguments))
 
 def get_timestamp():
     '''gets current time'''
@@ -127,6 +141,10 @@ def lock_index(scope, cache_root):
     while not index_locked_by_us(scope, cache_root):
         pass
 
+def empty_index():
+    '''defines what an empty cache index looks like.'''
+    return {'cachelist': {}}
+
 def load_index(scope, cache_root):
     '''loads the index of cache entries
 
@@ -139,7 +157,7 @@ def load_index(scope, cache_root):
         index = pickle.load(indexfile)
         indexfile.close()
     except IOError:
-        index = {}
+        index = empty_index()
         write_index(index, scope, cache_root)
     return index
 
@@ -153,7 +171,7 @@ def write_index(index, scope, cache_root):
     pickle.dump(index, indexfile)
     indexfile.close()
 
-def check_cache(function, arguments, scope=SCOPE, cache_root=CACHE_ROOT):
+def check_cache(function, arguments, scope, cache_root):
     '''search cached data for an entry corresponding to function(arguments)
 
     Must hold index lock in this function.'''
@@ -177,15 +195,43 @@ def get_cache_file(function, arguments, scope, cache_root):
     unlock_index(scope, cache_root)
     return cache_file
 
-def get_logfiles(function, arguments, filter_func, scope, cache_root):
+def get_logfiles(function, arguments, filter_func=lambda x: x, scope=None, cache_root=None):
     '''finds all cache entries tagged as "logs" for function(arguments)'''
-    return filter_func(check_cache(function, arguments, scope, cache_root)['logfiles'])
+
+    if cache_root is None:
+        cache_root = DEFAULT_CACHE_ROOT
+    if scope is None:
+        scope = DEFAULT_SCOPE
+    lock_index(scope, cache_root)
+    filtered_logfiles = filter_func(check_cache(function, arguments, scope, cache_root)['logfiles'])
+    unlock_index(scope, cache_root)
+    return filtered_logfiles
+
+def get_logged_calls(function, scope=None, cache_root=None):
+    '''returns a list of dicts with keys {arguments, metadata, timestamp}
+    corresponding to all calls of function stored in the cache'''
+    if cache_root is None:
+        cache_root = DEFAULT_CACHE_ROOT
+    if scope is None:
+        scope = DEFAULT_SCOPE
+
+    lock_index(scope, cache_root)
+
+    index = load_index(scope, cache_root)
+    func_name = get_func_name(function)
+    if func_name not in index['cachelist']:
+        logged_calls = []
+    else:
+        logged_calls = index['cachelist'][func_name]
+    unlock_index(scope, cache_root)
+
+    return logged_calls
 
 def blank_index_entry():
     '''generates an empty cache index entry to be filled in'''
     return {'cache_file': None, 'cacheTime': 0, 'logfiles': []}
 
-def add_to_index(cache_key, metadata, timestamp, index, cache_file, setcache_flag):
+def add_to_index(function, arguments, metadata, timestamp, index, cache_file, setcache_flag):
     '''
     adds an entry corresponding to cache_key with timestamp and metadata to an index
     dictionary.
@@ -193,6 +239,7 @@ def add_to_index(cache_key, metadata, timestamp, index, cache_file, setcache_fla
     write-only log or can be accessed as a cache-hit on a lookup.
     CAREFUL: THIS FUNCTION MODIFIES THE SUPPLIED INDEX DICTIONARY
     '''
+    cache_key = get_cache_key(function, arguments)
     if cache_key not in index:
         index[cache_key] = blank_index_entry()
 
@@ -202,13 +249,20 @@ def add_to_index(cache_key, metadata, timestamp, index, cache_file, setcache_fla
         index[cache_key]['cache_file'] = cache_file
         index[cache_key]['cacheTime'] = timestamp
 
+    func_name = get_func_name(function)
+
+    if func_name not in index['cachelist']:
+        index['cachelist'][func_name] = []
+
+    index['cachelist'][func_name].append({'arguments': arguments, 'metadata': metadata, \
+        'timestamp': timestamp})
+
 def write_entry_to_index(function, arguments, metadata, timestamp, cache_file, setcache_flag, \
         scope, cache_root):
     '''updates the cache index to include a newly-added cached function result'''
     lock_index(scope, cache_root)
     index = load_index(scope, cache_root)
-    cache_key = get_cache_key(function, arguments)
-    add_to_index(cache_key, metadata, timestamp, index, cache_file, setcache_flag)
+    add_to_index(function, arguments, metadata, timestamp, index, cache_file, setcache_flag)
     write_index(index, scope, cache_root)
     unlock_index(scope, cache_root)
 
@@ -234,11 +288,14 @@ def rebuild_index(scope, cache_root):
             file_pointer = open(os.path.join(path, file_name))
             cache_data = pickle.load(file_pointer)
             file_pointer.close()
+            function = cache_data['function']
+            arguments = cache_data['arguments']
             cache_key = cache_data['cache_key']
+            assert cache_key == get_cache_key(function, arguments)
             metadata = cache_data['metadata']
             is_cache_hit = cache_data['is_cache_hit']
             timestamp = cache_data['timestamp']
-            add_to_index(cache_key, metadata, timestamp, index, file_name, is_cache_hit)
+            add_to_index(function, arguments, metadata, timestamp, index, file_name, is_cache_hit)
         except:
             pass
     write_index(index, scope, cache_root)
@@ -258,7 +315,7 @@ def write_data_to_cache_file(cache_data, cache_file, scope, cache_root):
     pickle.dump(cache_data, file_pointer)
     file_pointer.close()
 
-def cache(function, arguments, scope=SCOPE, cache_root=CACHE_ROOT):
+def cache_function(function, arguments, metadata=None, scope=None, cache_root=None):
     '''
     caches the results of running a function with keyword arguments specified
     by the dictionary arguments in a given scope from the cache_root.
@@ -266,14 +323,20 @@ def cache(function, arguments, scope=SCOPE, cache_root=CACHE_ROOT):
     side-effects as recovering the function results from cache will not
     re-execute side effects.
     '''
+    if cache_root is None:
+        cache_root = DEFAULT_CACHE_ROOT
+    if scope is None:
+        scope = DEFAULT_SCOPE
+
+    touch_path(scope, cache_root)
 
     cache_file = get_cache_file(function, arguments, scope, cache_root)
     if cache_file != None:
         return get_results_from_cache_file(cache_file, scope, cache_root)
 
-    return log(function, arguments, None, True, scope, cache_root)
+    return log_function(function, arguments, metadata, True, scope, cache_root)
 
-def log(function, arguments, metadata=None, use_as_cache=True, scope=SCOPE, cache_root=CACHE_ROOT):
+def log_function(function, arguments, metadata=None, use_as_cache=True, scope=None, cache_root=None):
     '''
     runs the function on the arguments and stores the restult in a logfile.
     These results can be recalled as a cached result of the function later if
@@ -281,9 +344,12 @@ def log(function, arguments, metadata=None, use_as_cache=True, scope=SCOPE, cach
     Notice that this ALWAYS runs the function, regardless of whether it has been
     cached already.
 
-    metadata is an object that is stored in the metadata section of the cache index. It should
-    be a small object used for filtering log files.
+    metadata is an object that is stored in the metadata section of the cache index.
     '''
+    if cache_root is None:
+        cache_root = DEFAULT_CACHE_ROOT
+    if scope is None:
+        scope = DEFAULT_SCOPE
 
     touch_path(scope, cache_root)
 
@@ -302,36 +368,52 @@ def log(function, arguments, metadata=None, use_as_cache=True, scope=SCOPE, cach
     cache_file = get_cachefile_name(function, arguments, timestamp)
 
     write_data_to_cache_file(cache_data, cache_file, scope, cache_root)
-    write_entry_to_index(function, arguments, metadata, timestamp, cache_file, True, scope, \
-            cache_root)
+    write_entry_to_index(function, arguments, metadata, timestamp, cache_file, use_as_cache, \
+        scope, cache_root)
     return cache_data['results']
 
-def cachify(function, scope=SCOPE, cache_root=CACHE_ROOT):
+def cachify(function, scope=None, cache_root=None):
     '''returns a wrapped version of a supplied function
     that will check for and return a cached result when called
     and store results in the cache if no cached result is available.'''
+    if cache_root is None:
+        cache_root = DEFAULT_CACHE_ROOT
+    if scope is None:
+        scope = DEFAULT_SCOPE
 
     args_list = inspect.getargspec(function).args
     def cachified_function(*args, **kwargs):
         '''cachified version of a function'''
         args_dict = dict(zip(args_list, args))
         args_dict.update(kwargs)
-        cache(function, args_dict, scope, cache_root)
-    cachified_function.__doc__ = function.__doc__ + '\n**** cachified ****'
+        return cache_function(function, args_dict, scope=scope, cache_root=cache_root)
+    if function.__doc__:
+        cachified_function.__doc__ = function.__doc__ + '\n**** cachified ****'
+    cachified_function.__name__ = function.__name__
 
     return cachified_function
 
-def logify(function, use_as_cache=True, scope=SCOPE, cache_root=CACHE_ROOT):
+def logify(function, use_as_cache=True, scope=None, cache_root=None):
     '''returns a wrapped version of a supplied function
     that will ALWAYS run the function and store the result
     in the cache with the "log" tag.'''
+
+    if cache_root is None:
+        cache_root = DEFAULT_CACHE_ROOT
+    if scope is None:
+        scope = DEFAULT_SCOPE
     args_list = inspect.getargspec(function).args
     def logified_function(*args, **kwargs):
         '''logified vesion of a function'''
         args_dict = dict(zip(args_list, args))
         args_dict.update(kwargs)
-        log(function, args_dict, None, use_as_cache, scope, cache_root)
-    logified_function.__doc__ = function.__doc__ + '\n**** logified ****'
+        return log_function(function, args_dict, use_as_cache=use_as_cache, scope=scope, \
+            cache_root=cache_root)
+
+    if function.__doc__:
+        logified_function.__doc__ = function.__doc__ + '\n**** logified ****'
+    logified_function.__name__ = function.__name__
+
     return logified_function
 
 def get_save_func(data):
@@ -342,18 +424,45 @@ def get_save_func(data):
         return {'data': data, 'title': title}
     return save_data
 
-def save(data, title, metadata=None, scope=SCOPE, cache_root=CACHE_ROOT):
-    '''store some given data in the cache with a given title.'''
+def save(data, title, metadata=None, scope=None, cache_root=None):
+    '''store some given data in the cache with a given title and metadata.
+    This function timestamps the data, so save can be called many times with
+    identical arguments without overwriting old data.'''
+
+    if cache_root is None:
+        cache_root = DEFAULT_CACHE_ROOT
+    if scope is None:
+        scope = DEFAULT_SCOPE
     save_func = get_save_func(data)
     arguments = {'title': title}
-    log(save_func, arguments, metadata, False, scope, cache_root)
+    log_function(save_func, arguments, metadata, False, scope, cache_root)
 
-def get(title, filter_func=lambda x: x, scope=SCOPE, cache_root=CACHE_ROOT):
+def get(title, filter_func=lambda x: x, scope=None, cache_root=None):
     '''finds all data stored under a given title, filtering the results using filter_func'''
+
+    if cache_root is None:
+        cache_root = DEFAULT_CACHE_ROOT
+    if scope is None:
+        scope = DEFAULT_SCOPE
     save_func = get_save_func(None)
     arguments = {'title': title}
 
     logfiles = get_logfiles(save_func, arguments, filter_func, scope, cache_root)
 
-    return [{'savedData': get_results_from_cache_file(logFile['file_name'], scope, cache_root), \
-        'metadata': logFile['metadata']} for logFile in logfiles]
+    return [{'saved_data': get_results_from_cache_file(logfile['file_name'], scope, cache_root), \
+        'metadata': logfile['metadata'], 'timestamp': logfile['time']} for logfile in logfiles]
+
+def get_last(title, filter_func=lambda x: x, scope=None, cache_root=None):
+    '''
+    returns the most recent saved data under the given title that 
+    passes the supplied filter.'''
+
+    filtered_results = get(title, filter_func, scope=scope, cache_root=cache_root)
+    last_timestamp = 0
+    saved_data = None
+    for result in filtered_results:
+        if result['timestamp'] > last_timestamp:
+            last_timestamp == result['timestamp']
+            saved_data = result['saved_data']['data']
+    return saved_data
+
