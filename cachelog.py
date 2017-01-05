@@ -9,7 +9,7 @@ import time
 import inspect
 import subprocess
 
-DEFAULT_CACHE_ROOT = './.pycache'
+DEFAULT_CACHE_ROOT = './.cachelog'
 DEFAULT_SCOPE = ''
 LOCK_DIR = '.locks'
 INDEX_NAME = 'cacheIndex'
@@ -387,7 +387,7 @@ def log_function(function, arguments, metadata=None, use_as_cache=True, scope=No
     timestamp = get_timestamp()
     cache_data['timestamp'] = timestamp
     cache_data['metadata'] = metadata
-    cache_data['pycacheversion'] = VERSION
+    cache_data['cachelogversion'] = VERSION
 
     cache_file = get_cachefile_name(function, arguments, timestamp)
 

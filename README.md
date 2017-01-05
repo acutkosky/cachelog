@@ -1,11 +1,11 @@
-# pycache
+# cachelog
 tool for saving expensive computations on disk or logging repeated computations.
 Requires pytest for testing.
 
 ```
-import pycache
+import cachelog
 
-@pycache.cachify
+@cachelog.cachify
 def expensive_function(arg, kwarg=0):
     ...
     return result
@@ -21,13 +21,13 @@ You can also cache functions you didn't define (or don't want to decorate for so
 result = cache_function(expensive_function, {'arg': 5, 'kwarg': 0})
 
 #or alternatively:
-cachified_func = pycache.cachify(expensive_external_function)
+cachified_func = cachelog.cachify(expensive_external_function)
 result = cachified_func(5)
 ```
 
 Use the `log` functionality to save function results but always run the function:
 ```
-@pycache.logify
+@cachelog.logify
 def find_nicest_weather(country):
     weather = get_weather_today(country)
     # Do something with the weather
@@ -42,7 +42,7 @@ find_nicest_weather('USA') # = 'Cincinatti'
 There are functions `log_function` and `logify` analgous to `cache_function` and `cachify`.
 You can recover a list of the logged function calls with `get_logged_calls`
 ```
-logs = pycache.get_logged_calls(find_nicest_weather)
+logs = cachelog.get_logged_calls(find_nicest_weather)
 len(logs) = 3
 logs[0].keys # ['timestamp', 'metadata', 'file_name', 'git_hash', 'arguments', 'function']
 ```
@@ -68,14 +68,14 @@ metadata
 
 The results can be recovered with `get_results_from_cache_file(logs[0]['file_name'])`.
 
-pycache can also be used as a generic way to save data rather than function evaluations:
+cachelog can also be used as a generic way to save data rather than function evaluations:
 ```
-pycache.save(some_data, title, metadata=None)
-pycache.get(title) # a list of dicts corresponding to each call of save with the given title. 
+cachelog.save(some_data, title, metadata=None)
+cachelog.get(title) # a list of dicts corresponding to each call of save with the given title. 
   The actual results are found in list_item['saved_data']['results']
-pycache.get_last(title) # the result of the last save call with this title (not a dict)
+cachelog.get_last(title) # the result of the last save call with this title (not a dict)
 ```
 
 The functions `get`, and `get_last` also take an optional argument `filter_func`. `filter_func` should take a list of `log` dicts, and return a list of `log` dicts. `get` and `get_last` will then fetch the results from this new list of `log`s.
 
-Finally, there's a simple utility function `pycache.force_git_commit()` that will throw an error if your code hasn't been committed.
+Finally, there's a simple utility function `cachelog.force_git_commit()` that will throw an error if your code hasn't been committed.
