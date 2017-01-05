@@ -396,15 +396,16 @@ def log_function(function, arguments, metadata=None, use_as_cache=True, scope=No
 
     touch_path(scope, cache_root)
 
-    processed_args = process_arguments(arguments)
+    unprocessed_args = arguments
+    arguments = process_arguments(arguments)
 
     cache_key = get_cache_key(function, arguments)
     cache_data = {}
     cache_data['cache_key'] = cache_key
     cache_data['is_cache_hit'] = use_as_cache
     cache_data['function'] = function.__name__
-    cache_data['arguments'] = processed_args
-    cache_data['results'] = function(**arguments)
+    cache_data['arguments'] = arguments
+    cache_data['results'] = function(**unprocessed_args)
     timestamp = get_timestamp()
     cache_data['timestamp'] = timestamp
     cache_data['metadata'] = metadata
