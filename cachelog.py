@@ -509,7 +509,6 @@ def get_last(title, filter_func=lambda x: x, scope=None, cache_root=None):
     saved_data = None
     for result in filtered_results:
         if result['timestamp'] > last_timestamp:
-            last_timestamp == result['timestamp']
-            saved_data = result['saved_data']['results']
+            last_timestamp = result['timestamp']
+            saved_data = result['results']['data']
     return saved_data
-
