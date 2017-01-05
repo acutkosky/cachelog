@@ -1,8 +1,9 @@
 """
 Tests for pycache
 """
-import pycache
+
 import pytest
+import pycache
 
 SIDE_EFFECT_CANARY = 0
 LOG_FUNC_CALLS = 0
