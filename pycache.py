@@ -255,11 +255,14 @@ def add_to_index(function, arguments, metadata, timestamp, index, cache_file, se
     write-only log or can be accessed as a cache-hit on a lookup.
     CAREFUL: THIS FUNCTION MODIFIES THE SUPPLIED INDEX DICTIONARY
     '''
+
+    func_name = get_func_name(function)
     cache_key = get_cache_key(function, arguments)
     if cache_key not in index:
         index[cache_key] = blank_index_entry()
 
-    logfile_data = {'file_name': cache_file, 'timestamp': timestamp, 'metadata': metadata}
+    logfile_data = {'file_name': cache_file, 'timestamp': timestamp, \
+        'metadata': metadata, 'arguments': arguments, 'function': func_name}
     if is_committed():
         logfile_data['git_hash'] = get_git_hash()
 
@@ -267,8 +270,6 @@ def add_to_index(function, arguments, metadata, timestamp, index, cache_file, se
     if setcache_flag and index[cache_key]['cacheTime'] < timestamp:
         index[cache_key]['cache_file'] = cache_file
         index[cache_key]['cacheTime'] = timestamp
-
-    func_name = get_func_name(function)
 
     if func_name not in index['cachelist']:
         index['cachelist'][func_name] = []
@@ -319,8 +320,12 @@ def rebuild_index(scope, cache_root):
             pass
     write_index(index, scope, cache_root)
 
-def get_results_from_cache_file(cache_file, scope, cache_root):
+def get_results_from_cache_file(cache_file, scope=None, cache_root=None):
     '''extracts function output from cached data'''
+    if cache_root is None:
+        cache_root = DEFAULT_CACHE_ROOT
+    if scope is None:
+        scope = DEFAULT_SCOPE
     path = os.path.join(cache_root, scope, cache_file)
     file_pointer = open(path)
     cache_data = pickle.load(file_pointer)
@@ -469,7 +474,7 @@ def get(title, filter_func=lambda x: x, scope=None, cache_root=None):
     logfiles = get_logfiles(save_func, arguments, filter_func, scope, cache_root)
 
     return [dict(logfile.items() + \
-        [('saved_data', get_results_from_cache_file(logfile['file_name'], scope, cache_root))]) \
+        [('results', get_results_from_cache_file(logfile['file_name'], scope, cache_root))]) \
     for logfile in logfiles]
 
 def get_last(title, filter_func=lambda x: x, scope=None, cache_root=None):
@@ -483,6 +488,6 @@ def get_last(title, filter_func=lambda x: x, scope=None, cache_root=None):
     for result in filtered_results:
         if result['timestamp'] > last_timestamp:
             last_timestamp == result['timestamp']
-            saved_data = result['saved_data']['data']
+            saved_data = result['saved_data']['results']
     return saved_data
 
