@@ -9,16 +9,13 @@ import time
 import inspect
 import subprocess
 
+import pymutex
+
 DEFAULT_CACHE_ROOT = './.cachelog'
 DEFAULT_SCOPE = ''
-LOCK_DIR = '.locks'
 INDEX_NAME = 'cacheIndex'
 
-LOCK_INDEX_PREFIX = 'lock_index'
-
 VERSION = 0.1
-
-ID = os.getpid()
 
 def slugify(value):
     """
@@ -57,7 +54,7 @@ def set_cache_root(cache_root):
 def touch_path(scope, cache_root):
     '''creates directories for given scope'''
     try:
-        os.makedirs(os.path.join(cache_root, scope, LOCK_DIR))
+        os.makedirs(os.path.join(cache_root, scope))
     except OSError:
         pass
 
@@ -93,69 +90,23 @@ def get_cachefile_name(function, arguments, timestamp):
     return get_cache_key(function, arguments) \
         + '::' + str(timestamp)+'.cache'
 
-def get_lockfile_name(scope, cache_root):
-    '''gets the name of file used to claim the lock on the cache index'''
-    return os.path.join(cache_root, scope, LOCK_DIR, LOCK_INDEX_PREFIX + ':' + str(ID))
-
-def get_indexlock_holder(scope, cache_root):
-    '''finds the ID of the process that currently holds the lock on the cache index'''
-    path = os.path.join(cache_root, scope, LOCK_DIR)
-    file_names = [f for f in os.listdir(path) if \
-        os.path.isfile(os.path.join(path, f)) and f.find(LOCK_INDEX_PREFIX) == 0]
-
-    def get_time_id_pairs(file_names):
-        '''helper function for extracting the list of processes (by ID) waiting on the lock
-        and when each ID asked for the lock.'''
-        for file_name in file_names:
-            file_pointer = open(os.path.join(path, file_name))
-            try:
-                time_id_pair = pickle.load(file_pointer)
-            except (EOFError, ValueError):
-                time_id_pair = None
-            file_pointer.close()
-            if time_id_pair != None:
-                yield time_id_pair
-
-    time_id_pairs = [pair for pair in get_time_id_pairs(file_names)]
-
-    if len(time_id_pairs) == 0:
-        return -1
-
-    min_time_stamp = min([x['timestamp'] for x in time_id_pairs])
-    lock_holder = min([x['ID'] for x in time_id_pairs if x['timestamp'] == min_time_stamp])
-
-    return lock_holder
+def get_lockstring(scope, cache_root):
+    '''gets the name of the index lock'''
+    return os.path.join(cache_root, scope, INDEX_NAME)
 
 def index_locked_by_us(scope, cache_root):
     '''returns true if this process holds the lock on the cache index.'''
-    return get_indexlock_holder(scope, cache_root) == ID
+    return pymutex.locked_by_us(get_lockstring(scope, cache_root))
 
 def unlock_index(scope, cache_root):
     '''release the lock on the cache index.'''
-    try:
-        lockfile_name = get_lockfile_name(scope, cache_root)
-        os.remove(lockfile_name)
-    except OSError:
-        pass
+    pymutex.unlock(get_lockstring(scope, cache_root))
 
 def lock_index(scope, cache_root):
     '''acquire the lock on the cache index.
     Returns when the lock has been acquired.
-
-    BUSY WAITS FOR NOW - IN FUTURE THIS SHOULD PROBABLY BECOME ASYNC
     '''
-
-    #Prevent double-locking
-    assert not index_locked_by_us(scope, cache_root)
-
-    lockfile_name = get_lockfile_name(scope, cache_root)
-    lockfile = open(lockfile_name, 'w')
-    timestamp = get_timestamp()
-    pickle.dump({'timestamp': timestamp, 'ID': ID}, lockfile)
-    lockfile.close()
-
-    while not index_locked_by_us(scope, cache_root):
-        pass
+    pymutex.lock(get_lockstring(scope, cache_root))
 
 def empty_index():
     '''defines what an empty cache index looks like.'''
@@ -501,7 +452,7 @@ def get(title, filter_func=lambda x: x, scope=None, cache_root=None):
 
 def get_last(title, filter_func=lambda x: x, scope=None, cache_root=None):
     '''
-    returns the most recent saved data under the given title that 
+    returns the most recent saved data under the given title that
     passes the supplied filter.'''
 
     filtered_results = get(title, filter_func, scope=scope, cache_root=cache_root)
