@@ -26,11 +26,11 @@ def slugify(value):
     characters,
     and converts spaces to hyphens.
 
-    copied from
+    (mostly) copied from
     http://stackoverflow.com/questions/295135/turn-a-string-into-a-valid-filename-in-python
     """
     value = unicodedata.normalize('NFKD', unicode(value)).encode('ascii', 'ignore')
-    value = unicode(re.sub(r'[^\w\s-]', '', value).strip().lower())
+    value = unicode(re.sub(r'[^\w\s:-{}\[\]]', '', value).strip().lower())
     value = unicode(re.sub(r'[-\s]+', '-', value))
     return str(value)
 
@@ -360,6 +360,25 @@ def cache_function(function, arguments, metadata=None, scope=None, cache_root=No
 
     return log_function(function, arguments, metadata, True, scope, cache_root)
 
+def is_pickleable(test_object):
+    '''
+    detects if an object is pickleable and returns true if so.
+    '''
+    flag = True
+    try:
+        pickle.dumps(test_object)
+    except pickle.PicklingError:
+        flag = False
+    return flag
+
+def process_arguments(arguments):
+    '''
+    converts arguments to repr strings if they are unpickleable
+    '''
+    return {arg: arguments[arg] \
+        if is_pickleable(arguments[arg]) else arguments[arg].__repr__() for arg in arguments}
+
+
 def log_function(function, arguments, metadata=None, use_as_cache=True, scope=None, cache_root=None):
     '''
     runs the function on the arguments and stores the restult in a logfile.
@@ -377,12 +396,14 @@ def log_function(function, arguments, metadata=None, use_as_cache=True, scope=No
 
     touch_path(scope, cache_root)
 
+    processed_args = process_arguments(arguments)
+
     cache_key = get_cache_key(function, arguments)
     cache_data = {}
     cache_data['cache_key'] = cache_key
     cache_data['is_cache_hit'] = use_as_cache
     cache_data['function'] = function.__name__
-    cache_data['arguments'] = arguments
+    cache_data['arguments'] = processed_args
     cache_data['results'] = function(**arguments)
     timestamp = get_timestamp()
     cache_data['timestamp'] = timestamp
