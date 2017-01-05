@@ -7,6 +7,7 @@ import unicodedata
 import re
 import time
 import inspect
+import subprocess
 
 DEFAULT_CACHE_ROOT = './.pycache'
 DEFAULT_SCOPE = ''
@@ -32,6 +33,21 @@ def slugify(value):
     value = unicode(re.sub(r'[^\w\s-]', '', value).strip().lower())
     value = unicode(re.sub(r'[-\s]+', '-', value))
     return str(value)
+
+def force_git_commit():
+    '''sets the FORCE_GIT_COMMIT flag.
+    If true, then disallows use with uncommitted code.'''
+    if not is_committed():
+        raise RuntimeError( \
+    'You have uncommitted changes! For sane logging, commit all changes before saving output.')
+
+def get_git_hash():
+    '''gets the current git hash'''
+    return subprocess.check_output(['git', 'rev-parse', 'HEAD']).strip()
+
+def is_committed():
+    '''checks if current code has been committed with git'''
+    return subprocess.check_output(['git', 'diff']) == ''
 
 def set_cache_root(cache_root):
     '''sets the path used to store cached results'''
@@ -243,8 +259,11 @@ def add_to_index(function, arguments, metadata, timestamp, index, cache_file, se
     if cache_key not in index:
         index[cache_key] = blank_index_entry()
 
-    index[cache_key]['logfiles'].append({'file_name': cache_file, 'time': timestamp, \
-        'metadata': metadata})
+    logfile_data = {'file_name': cache_file, 'timestamp': timestamp, 'metadata': metadata}
+    if is_committed():
+        logfile_data['git_hash'] = get_git_hash()
+
+    index[cache_key]['logfiles'].append(logfile_data)
     if setcache_flag and index[cache_key]['cacheTime'] < timestamp:
         index[cache_key]['cache_file'] = cache_file
         index[cache_key]['cacheTime'] = timestamp
@@ -449,8 +468,9 @@ def get(title, filter_func=lambda x: x, scope=None, cache_root=None):
 
     logfiles = get_logfiles(save_func, arguments, filter_func, scope, cache_root)
 
-    return [{'saved_data': get_results_from_cache_file(logfile['file_name'], scope, cache_root), \
-        'metadata': logfile['metadata'], 'timestamp': logfile['time']} for logfile in logfiles]
+    return [dict(logfile.items() + \
+        [('saved_data', get_results_from_cache_file(logfile['file_name'], scope, cache_root))]) \
+    for logfile in logfiles]
 
 def get_last(title, filter_func=lambda x: x, scope=None, cache_root=None):
     '''
