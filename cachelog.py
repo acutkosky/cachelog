@@ -8,6 +8,7 @@ import re
 import time
 import inspect
 import subprocess
+import exceptions
 
 import pymutex
 
@@ -28,7 +29,6 @@ def slugify(value):
     """
     value = unicodedata.normalize('NFKD', unicode(value)).encode('ascii', 'ignore')
     value = unicode(re.sub(r'[^\w\s:-{}\[\]]', '', value).strip().lower())
-    value = unicode(re.sub(r'[-\s]+', '-', value))
     return str(value)
 
 def force_git_commit():
@@ -225,8 +225,8 @@ def add_to_index(function, arguments, metadata, timestamp, index, cache_file, se
     if func_name not in index['cachelist']:
         index['cachelist'][func_name] = []
 
-    index['cachelist'][func_name].append({'arguments': arguments, 'metadata': metadata, \
-        'timestamp': timestamp})
+    index['cachelist'][func_name].append({'cache_file': cache_file, 'arguments': arguments, \
+        'metadata': metadata, 'timestamp': timestamp})
 
 def write_entry_to_index(function, arguments, metadata, timestamp, cache_file, setcache_flag, \
         scope, cache_root):
@@ -463,3 +463,36 @@ def get_last(title, filter_func=lambda x: x, scope=None, cache_root=None):
             last_timestamp = result['timestamp']
             saved_data = result['results']['data']
     return saved_data
+
+def process_logged_function_calls(function, processor, scope=None, cache_root=None):
+    '''
+    finds all stored values of a function and returns a list 
+    [process(return_val) for return_val returned from function]
+    
+    This is accomplished without loading all the return_vals into memory
+    simultaneously.'''
+
+    logged_calls = get_logged_calls(function, scope, cache_root)
+    return [processor(get_results_from_cache_file(logged_call['cache_file'])) \
+        for logged_call in logged_calls]
+
+
+
+def recover_logged_value(function, arguments, scope=None, cache_root=None):
+    '''
+    recovers a previously computed value of a function. Raises an exception if there
+    is no value to recover.
+    '''
+    if cache_root is None:
+        cache_root = DEFAULT_CACHE_ROOT
+    if scope is None:
+        scope = DEFAULT_SCOPE
+
+    touch_path(scope, cache_root)
+
+    cache_file = get_cache_file(function, arguments, scope, cache_root)
+    if cache_file is None:
+        raise exceptions.ValueError
+    else:
+        return get_results_from_cache_file(cache_file, scope, cache_root)
+

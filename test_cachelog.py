@@ -139,3 +139,21 @@ def test_save_data():
 
     recovered = cachelog.get_last(title)
     assert recovered == data
+
+def test_process_func_calls():
+    def func_to_process(x):
+        return x*2
+
+    logified_func = cachelog.logify(func_to_process)
+    for x in xrange(10):
+        logified_func(x)
+
+    def processor(y):
+        return y/2
+
+    processed_calls = cachelog.process_logged_function_calls(func_to_process, processor)
+
+    for a, b in zip(xrange(10), processed_calls):
+        assert a == b
+
+
