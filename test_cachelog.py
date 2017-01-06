@@ -150,10 +150,15 @@ def test_process_func_calls():
 
     def processor(y):
         return y/2
+    def filter_func(y):
+        return y%4 == 0
 
-    processed_calls = cachelog.process_logged_function_calls(func_to_process, processor)
+    processed_calls = cachelog.process_logged_function_calls(func_to_process, \
+        processor, filter_func)
 
-    for a, b in zip(xrange(10), processed_calls):
+    assert len(processed_calls) == 5
+
+    for a, b in zip(xrange(10,2), processed_calls):
         assert a == b
 
 

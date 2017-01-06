@@ -464,17 +464,23 @@ def get_last(title, filter_func=lambda x: x, scope=None, cache_root=None):
             saved_data = result['results']['data']
     return saved_data
 
-def process_logged_function_calls(function, processor, scope=None, cache_root=None):
+def process_logged_function_calls(function, processor=lambda x: x, filter_func=lambda x: True, \
+    scope=None, cache_root=None):
     '''
     finds all stored values of a function and returns a list 
-    [process(return_val) for return_val returned from function]
+    [process(return_val) for return_val returned from function if filter_func(return_val)]
     
     This is accomplished without loading all the return_vals into memory
     simultaneously.'''
 
     logged_calls = get_logged_calls(function, scope, cache_root)
-    return [processor(get_results_from_cache_file(logged_call['cache_file'])) \
-        for logged_call in logged_calls]
+    processed_calls = []
+    for logged_call in logged_calls:
+        results = get_results_from_cache_file(logged_call['cache_file'])
+        if filter_func(results):
+            processed_calls.append(processor(results))
+
+    return processed_calls
 
 
 
