@@ -4,6 +4,7 @@ Tests for cachelog
 
 import pytest
 import cachelog
+import os
 
 SIDE_EFFECT_CANARY = 0
 LOG_FUNC_CALLS = 0
@@ -161,4 +162,26 @@ def test_process_func_calls():
     for a, b in zip(xrange(10,2), processed_calls):
         assert a == b
 
+def test_deleted_cachefile():
+    @cachelog.cachify
+    def func_to_delete(x):
+        global SIDE_EFFECT_CANARY
+        SIDE_EFFECT_CANARY += 1
+        return x*2
+    
+    initial_canary = SIDE_EFFECT_CANARY
+    func_to_delete(1)
+    logged_calls = cachelog.get_logged_calls(func_to_delete)
+    func_to_delete(1)
 
+    assert len(logged_calls) == 1
+    assert SIDE_EFFECT_CANARY == initial_canary + 1
+    cache_file = logged_calls[0]['cache_file']
+
+    os.remove(os.path.join(cachelog.DEFAULT_CACHE_ROOT, cachelog.DEFAULT_SCOPE, cache_file))
+
+    assert(len(cachelog.get_logged_calls(func_to_delete)) == 0)
+
+    func_to_delete(1)
+    assert(len(cachelog.get_logged_calls(func_to_delete)) == 1)
+    assert SIDE_EFFECT_CANARY == initial_canary + 2

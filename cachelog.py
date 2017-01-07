@@ -149,11 +149,10 @@ def check_cache(function, arguments, scope, cache_root):
     cache_key = get_cache_key(function, arguments)
 
     empty_return = {'cache_file': None, 'logfiles': []}
-
     if cache_key not in index:
         return empty_return
-    else:
-        if os.path.isfile(os.path.join(cache_root, scope, index[cache_key]['cache_file'])):
+    elif index[cache_key]['cache_file'] is not None:
+        if not os.path.isfile(os.path.join(cache_root, scope, index[cache_key]['cache_file'])):
             del index[cache_key]
             write_index(index, scope, cache_root)
             return empty_return
@@ -183,6 +182,28 @@ def get_logfiles(function, arguments, filter_func=lambda x: x, scope=None, cache
     unlock_index(scope, cache_root)
     return filtered_logfiles
 
+def remove_bad_logged_calls(logged_calls, scope, cache_root):
+    '''
+    removes deleted files from the index given a list of log entries.
+    '''
+    bad_logged_calls = [entry for entry in logged_calls \
+        if not os.path.isfile(os.path.join(cache_root, scope, entry['cache_file']))]
+
+    if len(bad_logged_calls) > 0:
+        func_names = set([entry['function'] for entry in bad_logged_calls])
+        lock_index(scope, cache_root)
+        index = load_index(scope, cache_root)
+        for func_name in func_names:
+            logged_calls = index['cachelist'][func_name]
+            logged_calls = [entry for entry in logged_calls \
+                if entry not in bad_logged_calls]
+            index['cachelist'][func_name] = logged_calls
+        for entry in bad_logged_calls:
+            del index[entry['cache_key']]
+        write_index(index, scope, cache_root)
+        unlock_index(scope, cache_root)
+    return [entry for entry in logged_calls if entry not in bad_logged_calls]
+
 def get_logged_calls(function, scope=None, cache_root=None):
     '''returns a list of dicts with keys {arguments, metadata, timestamp}
     corresponding to all calls of function stored in the cache'''
@@ -200,21 +221,7 @@ def get_logged_calls(function, scope=None, cache_root=None):
     else:
         logged_calls = index['cachelist'][func_name]
     unlock_index(scope, cache_root)
-
-    bad_logged_calls = [entry for entry in logged_calls \
-        if not os.path.isfile(os.path.join(cache_root, scope, entry['cache_file']))]
-    if len(bad_logged_calls) > 0:
-        lock_index(scope, cache_root)
-        index = load_index(scope, cache_root)
-        logged_calls = index['cachelist'][func_name]
-        logged_calls = [entry for entry in logged_calls \
-            if entry not in bad_logged_calls]
-        index['cachelist'][func_name] = logged_calls
-        write_index(index, scope, cache_root)
-        unlock_index(scope, cache_root)
-
-
-    return logged_calls
+    return remove_bad_logged_calls(logged_calls, scope, cache_root)
 
 def blank_index_entry():
     '''generates an empty cache index entry to be filled in'''
@@ -234,8 +241,9 @@ def add_to_index(function, arguments, metadata, timestamp, index, cache_file, se
     if cache_key not in index:
         index[cache_key] = blank_index_entry()
 
-    logfile_data = {'file_name': cache_file, 'timestamp': timestamp, \
-        'metadata': metadata, 'arguments': arguments, 'function': func_name}
+    logfile_data = {'cache_file': cache_file, 'timestamp': timestamp, \
+        'metadata': metadata, 'arguments': arguments, 'function': func_name, \
+        'cache_key': cache_key}
     if is_committed():
         logfile_data['git_hash'] = get_git_hash()
 
@@ -247,8 +255,7 @@ def add_to_index(function, arguments, metadata, timestamp, index, cache_file, se
     if func_name not in index['cachelist']:
         index['cachelist'][func_name] = []
 
-    index['cachelist'][func_name].append({'cache_file': cache_file, 'arguments': arguments, \
-        'metadata': metadata, 'timestamp': timestamp})
+    index['cachelist'][func_name].append(logfile_data)
 
 def write_entry_to_index(function, arguments, metadata, timestamp, cache_file, setcache_flag, \
         scope, cache_root):
@@ -469,7 +476,7 @@ def get(title, filter_func=lambda x: x, scope=None, cache_root=None):
     logfiles = get_logfiles(save_func, arguments, filter_func, scope, cache_root)
 
     return [dict(logfile.items() + \
-        [('results', get_results_from_cache_file(logfile['file_name'], scope, cache_root))]) \
+        [('results', get_results_from_cache_file(logfile['cache_file'], scope, cache_root))]) \
     for logfile in logfiles]
 
 def get_last(title, filter_func=lambda x: x, scope=None, cache_root=None):
@@ -504,7 +511,11 @@ def process_logged_function_calls(function, processor=lambda x: x, filter_func=l
 
     return processed_calls
 
-
+def recover_logged_function_calls(function, scope=None, cache_root=None):
+    '''
+    simpler name for process_logged_function_calls with all default arguments.
+    '''
+    return process_logged_function_calls(function, scope=scope, cache_root=cache_root)
 
 def recover_logged_value(function, arguments, scope=None, cache_root=None):
     '''
@@ -523,4 +534,3 @@ def recover_logged_value(function, arguments, scope=None, cache_root=None):
         raise exceptions.ValueError
     else:
         return get_results_from_cache_file(cache_file, scope, cache_root)
-
