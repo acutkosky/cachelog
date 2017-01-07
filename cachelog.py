@@ -128,6 +128,7 @@ def load_index(scope, cache_root):
         write_index(index, scope, cache_root)
     return index
 
+
 def write_index(index, scope, cache_root):
     '''saves current copy of cache index in memory to disk.
 
@@ -147,8 +148,15 @@ def check_cache(function, arguments, scope, cache_root):
 
     cache_key = get_cache_key(function, arguments)
 
+    empty_return = {'cache_file': None, 'logfiles': []}
+
     if cache_key not in index:
-        return {'cache_file': None, 'logfiles': []}
+        return empty_return
+    else:
+        if os.path.isfile(os.path.join(cache_root, scope, index[cache_key]['cache_file'])):
+            del index[cache_key]
+            write_index(index, scope, cache_root)
+            return empty_return
 
     return index[cache_key]
 
@@ -160,6 +168,7 @@ def get_cache_file(function, arguments, scope, cache_root):
     lock_index(scope, cache_root)
     cache_file = check_cache(function, arguments, scope, cache_root)['cache_file']
     unlock_index(scope, cache_root)
+
     return cache_file
 
 def get_logfiles(function, arguments, filter_func=lambda x: x, scope=None, cache_root=None):
@@ -191,6 +200,19 @@ def get_logged_calls(function, scope=None, cache_root=None):
     else:
         logged_calls = index['cachelist'][func_name]
     unlock_index(scope, cache_root)
+
+    bad_logged_calls = [entry for entry in logged_calls \
+        if not os.path.isfile(os.path.join(cache_root, scope, entry['cache_file']))]
+    if len(bad_logged_calls) > 0:
+        lock_index(scope, cache_root)
+        index = load_index(scope, cache_root)
+        logged_calls = index['cachelist'][func_name]
+        logged_calls = [entry for entry in logged_calls \
+            if entry not in bad_logged_calls]
+        index['cachelist'][func_name] = logged_calls
+        write_index(index, scope, cache_root)
+        unlock_index(scope, cache_root)
+
 
     return logged_calls
 
